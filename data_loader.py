@@ -244,8 +244,8 @@ class ToTensorLab(object):
 			'label': torch.from_numpy(tmpLbl)}
 
 class SalObjDataset(Dataset):
-	def __init__(self,img_name_list,lbl_name_list,transform=None):
-		# self.root_dir = root_dir
+	def __init__(self,root_dir, img_name_list,lbl_name_list,transform=None):
+		self.root_dir = root_dir
 		# self.image_name_list = glob.glob(image_dir+'*.png')
 		# self.label_name_list = glob.glob(label_dir+'*.png')
 		self.image_name_list = img_name_list
@@ -292,9 +292,11 @@ class SalObjDataset(Dataset):
 		# 	label = label[::-1,:,:]
 		# #vertical flip
 
-		sample = {'image':image, 'label':label}
+		sample = {'image':image,
+            'label':label}
 
 		if self.transform:
 			sample = self.transform(sample)
 
+		sample['path'] = self.image_name_list[idx].replace(self.root_dir, '')
 		return sample
