@@ -1,14 +1,15 @@
 # data loader
 from __future__ import print_function, division
-import glob
+import cv2
 import torch
 from skimage import io, transform, color
 import numpy as np
 import math
-import matplotlib.pyplot as plt
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, utils
+from torch.utils.data import Dataset
+from torchvision import transforms
 from PIL import Image
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 #==========================dataset load==========================
 
 class RescaleT(object):
@@ -243,6 +244,42 @@ class ToTensorLab(object):
 		return {'image': torch.from_numpy(tmpImg),
 			'label': torch.from_numpy(tmpLbl)}
 
+
+class PadDict(object):
+	"""Convert ndarrays in sample to Tensors."""
+	def __init__(self, padding=0, fill=1):
+		self.padding = [padding, padding]
+		self.value = fill
+		self.func = transforms.Pad(padding, padding_mode='edge')
+
+	def __call__(self, sample):
+		img = Image.fromarray(sample['image'])
+		img = self.func(img)
+		sample['image'] = np.array(img)
+		return sample
+
+
+class HighContrast(object):
+	"""Convert ndarrays in sample to Tensors."""
+	def __init__(self):
+		pass
+
+	def __call__(self, sample):
+		img = sample['image']
+		lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
+		# 将LAB格式分割为L、A和B通道
+		l, a, b = cv2.split(lab)
+		# 创建CLAHE对象并应用于L通道
+		clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+		cl = clahe.apply(l)
+		# 合并L、A和B通道
+		merged = cv2.merge([cl, a, b])
+		# 将LAB格式转换回BGR格式
+		result = cv2.cvtColor(merged, cv2.COLOR_LAB2RGB)
+		sample['image'] = np.array(result)
+		return sample
+
+
 class SalObjDataset(Dataset):
 	def __init__(self,root_dir, img_name_list,lbl_name_list,transform=None):
 		self.root_dir = root_dir
@@ -256,20 +293,13 @@ class SalObjDataset(Dataset):
 		return len(self.image_name_list)
 
 	def __getitem__(self,idx):
-
-		# image = Image.open(self.image_name_list[idx])#io.imread(self.image_name_list[idx])
-		# label = Image.open(self.label_name_list[idx])#io.imread(self.label_name_list[idx])
-
 		image = io.imread(self.image_name_list[idx])
-
+		if image.ndim == 2:
+			image = np.stack((image, image, image), axis=-1)
 		if(0==len(self.label_name_list)):
 			label_3 = np.zeros(image.shape)
 		else:
 			label_3 = io.imread(self.label_name_list[idx])
-
-		#print("len of label3")
-		#print(len(label_3.shape))
-		#print(label_3.shape)
 
 		label = np.zeros(label_3.shape[0:2])
 		if(3==len(label_3.shape)):
@@ -283,15 +313,6 @@ class SalObjDataset(Dataset):
 			image = image[:,:,np.newaxis]
 			label = label[:,:,np.newaxis]
 
-		# #vertical flipping
-		# # fliph = np.random.randn(1)
-		# flipv = np.random.randn(1)
-		#
-		# if flipv>0:
-		# 	image = image[::-1,:,:]
-		# 	label = label[::-1,:,:]
-		# #vertical flip
-
 		sample = {'image':image,
             'label':label}
 
@@ -299,4 +320,6 @@ class SalObjDataset(Dataset):
 			sample = self.transform(sample)
 
 		sample['path'] = self.image_name_list[idx].replace(self.root_dir, '')
+		if sample['path'][0] == '/':
+			sample['path'] = sample['path'][1:]
 		return sample
